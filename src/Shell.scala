@@ -6,7 +6,7 @@ TODO: refactoring to implement complex functions. Implement grep, locate and mov
  */
 object Shell extends App {
 
-  val root = Node("root", "/root")
+  val root = Node("root", "/")
 
   val scanner = new Scanner(System.in)
   var cmd = " "
@@ -45,12 +45,19 @@ object Shell extends App {
     move across directories
     TODO: Implement backward navigation
      */
-    cmd.contains(CD) && !cmd.equals(CD) match {
+    cmd.contains(CD) && !cmd.equals(CD) && !cmd.endsWith("..") match {
       case true =>
         val directory = cmd.split(" ")(1)
-        directory.contains("/") match {
+        val dir = directory.charAt(0) match {
+          case '/' =>
+            curr = root
+            directory.substring(1)
+          case _ => directory
+        }
+
+        dir.contains("/") match {
           case true =>
-            val paths = directory.split("/").tail
+            val paths = dir.split("/")
             val temp = fetchNode(paths, curr)
             curr = temp match {
               case None =>
@@ -59,7 +66,7 @@ object Shell extends App {
               case Some(nd) => nd
             }
           case false =>
-            val temp = fetchNode(Seq(directory), curr)
+            val temp = fetchNode(Seq(dir), curr)
             curr = temp match {
               case None =>
                 println("Incorrect Path Provided")
@@ -70,13 +77,22 @@ object Shell extends App {
       case false => None
     }
 
+    cmd.contains(CD) && cmd.endsWith("..") match {
+      case true =>
+        curr = curr.parent match {
+          case Some(p) => p
+          case None => root
+        }
+      case false => None
+    }
+
     /*
     create a directory
      */
     cmd.contains(MKDIR) match {
       case true =>
         val directoryName = cmd.split(" ")(1)
-        val newNode = Node(directoryName, curr.path + "/" + directoryName, Some(curr))
+        val newNode = Node(directoryName, curr.path + directoryName + "/", Some(curr))
         curr.sub = curr.sub match {
           case Some(sb) => Some(sb ++ Seq(newNode))
           case None => Some(Seq(newNode))
@@ -91,15 +107,26 @@ object Shell extends App {
     cmd.contains(READ) match {
       case true =>
         val fileName = cmd.split(" ")(1)
-        curr.files match {
-          case Some(fi) =>
-            val filtered = fi.filter(_.name == fileName)
-            filtered.isEmpty match {
-              case true => println("No such file found")
-              case false => println(filtered.head.content)
+        fileName.contains("/") match {
+          case false =>
+            curr.files match {
+              case Some(fi) =>
+                val filtered = fi.filter(_.name == fileName)
+                filtered.isEmpty match {
+                  case true => println("No such file found")
+                  case false => println(filtered.head.content)
+                }
+              case None => println("No such file found")
             }
-          case None => println("No such file found")
+          case true =>
+            val paths = fileName.split("/")
+            val file = reachDirectoryAndFetchFile(paths, curr)
+            file match {
+              case Some(f) => println(f.content)
+              case None => println("Incorrect Path Provided")
+            }
         }
+
       case false => None
     }
 
@@ -124,12 +151,60 @@ object Shell extends App {
       case true =>
         val fileName = cmd.split(" ")(1)
         val fileContent = cmd.split(" ")(2)
-
-        curr.files = curr.files match {
-          case None => Some(Seq(File(fileName, fileContent)))
-          case Some(fi) => Some(fi ++ Seq(File(fileName, fileContent)))
+        fileName.contains("/") match {
+          case false =>
+            curr.files = curr.files match {
+              case None => Some(Seq(File(fileName, fileContent)))
+              case Some(fi) => Some(fi ++ Seq(File(fileName, fileContent)))
+            }
+          case true =>
+            val paths = fileName.split("/")
+            reachDirectoryAndCreateFile(paths, curr, File(paths.last, fileContent))
         }
       case false => None
+    }
+  }
+
+  def reachDirectoryAndCreateFile(paths: Seq[String], node: Node, file: File): Boolean = {
+    paths.length == 1 match {
+      case true =>
+        node.files = node.files match {
+          case Some(fi) => Some(fi ++ Seq(file))
+          case None => Some(Seq(file))
+        }
+        true
+      case false =>
+        node.sub match {
+          case None => false
+          case Some(sb) =>
+            val sd = sb.find(_.name == paths.head)
+            sd match {
+              case None => false
+              case Some(s) =>
+                reachDirectoryAndCreateFile(paths.tail, s, file)
+            }
+        }
+    }
+  }
+
+  def reachDirectoryAndFetchFile(paths: Seq[String], node: Node): Option[File] = {
+    paths.length == 1 match {
+      case true =>
+        node.files match {
+          case Some(fi) => fi.find(_.name == paths.head)
+          case None => None
+        }
+      case false =>
+        node.sub match {
+          case None => None
+          case Some(sb) =>
+            val sd = sb.find(_.name == paths.head)
+            sd match {
+              case None => None
+              case Some(s) =>
+                reachDirectoryAndFetchFile(paths.tail, s)
+            }
+        }
     }
   }
 
